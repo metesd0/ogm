@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Ogm.Server</AssemblyName>
+    <RootNamespace>Ogm.Server</RootNamespace>
+
+    <Version>1.0.0</Version>
+    <Product>Ogm Print Server</Product>
+    <AssemblyTitle>Ogm Print Server</AssemblyTitle>
+    <Description>Ajanlardan gelen yazdirma islerini toplayip panelde gosteren merkezi sunucu.</Description>
+
+    <!-- Single-file & self-contained (zero-dependency) yayin icin hazir RID'ler -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ogm.Shared\Ogm.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Syncfusion.XpsToPdfConverter.Net.Core" Version="35.1.37" />
+    <PackageReference Include="Syncfusion.Pdf.Net.Core" Version="35.1.37" />
+  </ItemGroup>
+
+  <!-- Panel dosyalari (index.html/app.js/styles.css) exe'nin yanindaki
+       wwwroot klasorune kopyalanir. Boylece uygulama, statik web varliklari
+       bildirimine (manifest) ihtiyac duymadan, dogrudan derleme ciktisindan
+       ve tek dosya yayindan calistirilabilir. -->
+  <ItemGroup>
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

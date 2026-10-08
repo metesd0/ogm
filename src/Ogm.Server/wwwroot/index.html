@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OGM — Yazdırma İzleme ve Güvenlik Paneli</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon-wrap" title="OGM PrintAudit">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 9V2h12v7"></path>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <path d="M6 14h12v8H6z"></path>
+          <circle cx="18" cy="13" r="1"></circle>
+        </svg>
+      </div>
+      <div class="brand-titles">
+        <div class="brand-row">
+          <span class="logo">OGM PrintAudit</span>
+          <span class="brand-version">v1.0 Pro</span>
+        </div>
+        <span class="title">Merkezi Yazdırma İzleme &amp; Denetim Sistemi</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <!-- Real-time Connection Status -->
+      <span id="conn" class="badge offline" title="SSE Canlı Akış Durumu">
+        <span class="radar-dot"></span>
+        <span class="conn-text">bağlanıyor…</span>
+      </span>
+
+      <!-- Live Clock -->
+      <span id="clock" class="badge badge-clock">--:--:--</span>
+
+      <!-- Sound Toggle -->
+      <button id="btn-sound" class="btn btn-outline btn-icon" title="Yeni işlerde sesli bildirim çal" aria-label="Ses Bildirimi">
+        <svg id="icon-sound-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <svg id="icon-sound-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
+      </button>
+
+      <!-- Theme Switcher -->
+      <button id="btn-theme" class="btn btn-outline btn-icon" title="Koyu / Açık Tema Değiştir" aria-label="Tema">
+        <svg id="icon-theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+        <svg id="icon-theme-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+
+      <!-- Agent Install Guide Button -->
+      <button id="btn-guide" class="btn btn-outline" title="Hedef bilgisayarlara ajan kurma rehberi">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>Ajan Kurulumu</span>
+      </button>
+
+      <!-- System Diagnostics Button -->
+      <button id="btn-sysinfo" class="btn btn-outline btn-icon" title="Sunucu & Sistem Bilgisi">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+        </svg>
+      </button>
+
+      <!-- Manual Refresh Button -->
+      <button id="btn-refresh" class="btn btn-primary btn-icon" title="Verileri Şimdi Yenile">
+        <svg id="icon-refresh" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- KPI Metric Cards Grid -->
+    <section class="cards">
+      <!-- Agents Card -->
+      <div class="card card-accent-blue">
+        <div class="card-top">
+          <span class="card-label">Aktif Ajanlar</span>
+          <div class="card-icon icon-blue">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value">
+          <span id="stat-online" style="color: var(--online);">0</span>
+          <span style="font-size: 16px; color: var(--text-dim); font-weight: 500;">/</span>
+          <span id="stat-agents">0</span>
+        </div>
+        <div class="card-subtext">
+          <span id="stat-agents-sub">0 izlenen bilgisayar</span>
+          <span id="stat-agents-ratio" style="font-weight: 700; color: var(--online);">%0</span>
+        </div>
+        <div class="card-progress-track">
+          <div id="stat-agents-bar" class="card-progress-bar" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Total Jobs Card -->
+      <div class="card card-accent-green">
+        <div class="card-top">
+          <span class="card-label">Yazdırılan Belgeler</span>
+          <div class="card-icon icon-green">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="stat-jobs">0</div>
+        <div class="card-subtext">
+          <span id="stat-jobs-today">Bugün: 0 iş</span>
+          <span class="badge online" style="padding: 2px 7px; font-size: 10px;">Arşivde Saklanıyor</span>
+        </div>
+      </div>
+
+      <!-- Total Transferred Bytes Card -->
+      <div class="card card-accent-purple">
+        <div class="card-top">
+          <span class="card-label">Arşiv Veri Hacmi</span>
+          <div class="card-icon icon-purple">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="stat-bytes">0 B</div>
+        <div class="card-subtext">
+          <span>Yakalana ham SPL verisi</span>
+          <span id="stat-avg-size" style="color: var(--text-dim); font-size: 11px;">Ort: 0 B</span>
+        </div>
+      </div>
+
+      <!-- Queue & Sync Status Card -->
+      <div class="card card-accent-amber">
+        <div class="card-top">
+          <span class="card-label">Kuyruk &amp; Ajan Sağlığı</span>
+          <div class="card-icon icon-amber">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value">
+          <span id="stat-pending">0</span>
+          <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">bekleyen</span>
+        </div>
+        <div class="card-subtext">
+          <span id="stat-failed-wrap"><span id="stat-failed" style="font-weight: 700; color: var(--danger);">0</span> aktarım hatası</span>
+          <span id="stat-sync-badge" class="badge online" style="padding: 2px 7px; font-size: 10px;">Senkronize</span>
+        </div>
+      </div>
+
+      <!-- Unique Printers Card -->
+      <div class="card card-accent-cyan">
+        <div class="card-top">
+          <span class="card-label">Tespit Edilen Yazıcılar</span>
+          <div class="card-icon icon-cyan">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="stat-printers">0</div>
+        <div class="card-subtext">
+          <span>İzlenen ağ &amp; yerel yazıcı</span>
+          <span style="color: var(--cyan); font-size: 11px;">Aktif İzleme</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Visual Analytics & Distribution Bar -->
+    <section class="analytics-grid">
+      <!-- Real-time Activity Timeline Chart -->
+      <div class="analytics-card">
+        <div class="analytics-header">
+          <span class="analytics-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            Yazdırma Aktivitesi Zaman Grafiği
+          </span>
+          <span id="chart-subtext" style="font-size: 11px; color: var(--text-dim);">Son 12 saatlik iş yoğunluğu</span>
+        </div>
+        <div class="chart-container" id="timeline-chart">
+          <!-- Dynamically generated SVG chart -->
+          <svg class="chart-svg" id="chart-svg" viewBox="0 0 500 120" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.4" />
+                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0" />
+              </linearGradient>
+            </defs>
+            <path id="chart-area" d="" fill="url(#chartGrad)"></path>
+            <path id="chart-line" d="" fill="none" stroke="#3b82f6" stroke-width="2.5"></path>
+            <g id="chart-points"></g>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Top Users / Machines Breakdown -->
+      <div class="analytics-card">
+        <div class="analytics-header">
+          <span class="analytics-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            En Aktif Bilgisayarlar
+          </span>
+        </div>
+        <div class="breakdown-list" id="breakdown-machines">
+          <div style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 20px 0;">Veri toplanıyor…</div>
+        </div>
+      </div>
+
+      <!-- Printer Usage Breakdown -->
+      <div class="analytics-card">
+        <div class="analytics-header">
+          <span class="analytics-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            Yazıcı Dağılımı
+          </span>
+        </div>
+        <div class="breakdown-list" id="breakdown-printers">
+          <div style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 20px 0;">Veri toplanıyor…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agents Panel -->
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title-group">
+          <h2 class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            İzlenen Bilgisayarlar &amp; Ajanlar
+          </h2>
+          <span id="agents-count" class="pill-count">0 ajan</span>
+        </div>
+
+        <div class="panel-toolbar">
+          <!-- Agent Filter Tabs -->
+          <div class="filter-tabs" id="agents-status-tabs">
+            <button class="filter-tab active" data-filter="all">Tümü</button>
+            <button class="filter-tab" data-filter="online">Çevrimiçi</button>
+            <button class="filter-tab" data-filter="offline">Çevrimdışı</button>
+            <button class="filter-tab" data-filter="pending">Kuyrukta Olanlar</button>
+          </div>
+
+          <!-- Agent Search Box -->
+          <div class="search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="agents-search" class="input-search" type="search" placeholder="Ajan ara: makine, kullanıcı, IP…" />
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="agents-table">
+          <thead>
+            <tr>
+              <th>Durum</th>
+              <th>Bilgisayar</th>
+              <th>Kullanıcı</th>
+              <th>IP Adresi</th>
+              <th>İşletim Sistemi</th>
+              <th>Sürüm</th>
+              <th>Son Sinyal</th>
+              <th class="num">Bekleyen</th>
+              <th class="num">Gönderilen</th>
+              <th class="num">Hata</th>
+              <th>İzleme</th>
+              <th style="text-align: right;">İşlemler</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="agents-empty" class="empty-state" style="display: none;">
+        <div class="empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </div>
+        <div class="empty-title">Henüz Kayıtlı Ajan Bulunamadı</div>
+        <div class="empty-desc">İzlemek istediğiniz bilgisayarlara Ogm.Agent servisini kurduğunuzda anında burada listelenecektir.</div>
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('btn-guide').click();" style="margin-top: 6px;">
+          Ajan Kurulum Rehberini Aç
+        </button>
+      </div>
+    </section>
+
+    <!-- Print Jobs Panel -->
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title-group">
+          <h2 class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Yazdırma İşleri &amp; Belge Arşivi
+          </h2>
+          <span id="jobs-count" class="pill-count">0 iş</span>
+        </div>
+
+        <div class="panel-toolbar">
+          <!-- Universal Search Input (ID=filter preserved for smoke test) -->
+          <div class="search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="filter" class="input-search" type="search" placeholder="Filtrele: belge, makine, yazıcı, kullanıcı, SHA-256…" />
+            <span id="filter-clear" class="search-clear">✕</span>
+          </div>
+
+          <!-- Dynamic Printer Filter -->
+          <select id="filter-printer" class="select-filter" title="Yazıcıya göre filtrele">
+            <option value="">Tüm Yazıcılar</option>
+          </select>
+
+          <!-- Dynamic Machine Filter -->
+          <select id="filter-machine" class="select-filter" title="Bilgisayara göre filtrele">
+            <option value="">Tüm Bilgisayarlar</option>
+          </select>
+
+          <!-- Data Type Filter -->
+          <select id="filter-datatype" class="select-filter" title="Format türüne göre filtrele">
+            <option value="">Tüm Formatlar</option>
+            <option value="EMF">EMF</option>
+            <option value="RAW">RAW</option>
+            <option value="TEXT">TEXT</option>
+          </select>
+
+          <!-- Time Range Filter -->
+          <select id="filter-time" class="select-filter" title="Zaman aralığına göre filtrele">
+            <option value="all">Tüm Zamanlar</option>
+            <option value="1h">Son 1 Saat</option>
+            <option value="today">Bugün</option>
+            <option value="7d">Son 7 Gün</option>
+          </select>
+
+          <!-- Sorting -->
+          <select id="sort-jobs" class="select-filter" title="Sıralama">
+            <option value="newest">En Yeni İlk</option>
+            <option value="oldest">En Eski İlk</option>
+            <option value="largest">En Büyük Boyut</option>
+            <option value="pages">En Çok Sayfa</option>
+          </select>
+
+          <!-- Export Buttons -->
+          <button id="btn-export-csv" class="btn btn-outline btn-sm" title="Filtrelenen işleri CSV olarak indir">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>CSV</span>
+          </button>
+
+          <button id="btn-export-json" class="btn btn-outline btn-sm" title="Filtrelenen işleri JSON olarak indir">
+            <span>JSON</span>
+          </button>
+
+          <!-- Clear Filters -->
+          <button id="btn-reset-filters" class="btn btn-outline btn-sm" title="Tüm filtreleri sıfırla" style="display: none;">
+            <span>✕ Sıfırla</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="jobs-table">
+          <thead>
+            <tr>
+              <th>Alındı</th>
+              <th>Bilgisayar / Kullanıcı</th>
+              <th>Yazıcı</th>
+              <th>Belge Adı</th>
+              <th>Format &amp; Sayfa</th>
+              <th class="num">Boyut</th>
+              <th>Karma (SHA-256)</th>
+              <th style="text-align: right;">İşlemler</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Controls -->
+      <div class="pagination-bar">
+        <div id="pagination-info" class="pagination-info">0 iş gösteriliyor</div>
+        <div class="pagination-controls">
+          <select id="page-size" class="select-filter" style="padding: 4px 8px; font-size: 12px;">
+            <option value="15">15 satır</option>
+            <option value="30">30 satır</option>
+            <option value="50">50 satır</option>
+            <option value="100">100 satır</option>
+            <option value="all">Tümü</option>
+          </select>
+          <div id="pagination-pages" style="display: flex; gap: 4px;"></div>
+        </div>
+      </div>
+
+      <div id="jobs-empty" class="empty-state" style="display: none;">
+        <div class="empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </div>
+        <div class="empty-title">Henüz Yazdırma İşi Alınmadı</div>
+        <div class="empty-desc">İzlenen bilgisayarlardan yazıcıya çıktı gönderildiğinde dosyalar otomatik yakalanıp burada listelenecektir.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Job Inspection & Preview Modal -->
+  <div id="modal-job" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-title">
+            <span id="modal-doc-icon">📄</span>
+            <span id="modal-doc-name">Belge Detayları</span>
+            <span id="modal-format-badge" class="pill-format">EMF</span>
+          </div>
+          <div class="modal-subtitle" id="modal-doc-subtitle">İş ID: -</div>
+        </div>
+        <button class="modal-close" onclick="closeJobModal();" aria-label="Kapat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-tabs">
+        <button id="modal-tab-meta" class="modal-tab-btn active" onclick="switchModalTab('meta');">Genel Bilgiler</button>
+        <button id="modal-tab-preview" class="modal-tab-btn" onclick="switchModalTab('preview');">Dosya İnceleme &amp; Metin Önizleme</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Tab 1: Metadata Grid -->
+        <div id="modal-pane-meta">
+          <div class="detail-grid">
+            <div class="detail-tile">
+              <span class="detail-label">Belge Adı</span>
+              <span class="detail-value" id="md-doc-name">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Hedef Yazıcı</span>
+              <span class="detail-value" id="md-printer">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Bilgisayar (Makine)</span>
+              <span class="detail-value" id="md-machine">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Yazdıran Kullanıcı</span>
+              <span class="detail-value" id="md-user">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Veri Formatı / Sayfa Sayısı</span>
+              <span class="detail-value" id="md-format-pages">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Dosya Boyutu</span>
+              <span class="detail-value" id="md-bytes">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Sunucuya Alınma Tarihi</span>
+              <span class="detail-value" id="md-date">-</span>
+            </div>
+            <div class="detail-tile">
+              <span class="detail-label">Ajan Kimliği (Agent ID)</span>
+              <span class="detail-value" id="md-agent-id">-</span>
+            </div>
+            <div class="detail-tile" style="grid-column: 1 / -1;">
+              <span class="detail-label">Bütünlük Özeti (SHA-256 Checksum)</span>
+              <span class="detail-value" id="md-sha256" style="font-family: var(--font-mono); font-size: 12px; color: var(--accent);">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Spooler Preview & Text Extraction -->
+        <div id="modal-pane-preview" style="display: none; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-weight: 700; font-size: 13px; color: var(--text);">
+              Tespit Edilen İçerik Türü: <span id="preview-detected-format" style="color: var(--online);">-</span>
+            </div>
+            <button id="btn-copy-extracted" class="btn btn-outline btn-sm">Metni Kopyala</button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span class="detail-label">Yazıcı Spool Dosyasından Ayıklanan Okunabilir Metinler:</span>
+            <div class="preview-box" id="preview-text-box">Yükleniyor…</div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span class="detail-label">Başlık Hex Dökümü (İlk 512 Bayt):</span>
+            <div class="hex-dump-box" id="preview-hex-box">Yükleniyor…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
+        <button class="btn btn-outline" onclick="closeJobModal();">Kapat</button>
+        <a id="modal-view-pdf-btn" class="btn btn-success" href="#" target="_blank" title="PDF Olarak Aç">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span>PDF Görüntüle</span>
+        </a>
+        <a id="modal-download-pdf-btn" class="btn btn-primary" href="#" title="PDF Olarak İndir">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span>PDF İndir</span>
+        </a>
+        <a id="modal-download-link" class="btn btn-outline btn-sm" href="#" download title="Ham Spool Dosyasını İndir">
+          <span id="modal-download-label">Ham SPL</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Installation Guide Modal -->
+  <div id="modal-guide" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            Ajan Kurulum Rehberi (Windows PC İzleme)
+          </div>
+          <div class="modal-subtitle">Hedef bilgisayarlarda arka planda gizli çalışacak ajanı kurma adımları</div>
+        </div>
+        <button class="modal-close" onclick="closeGuideModal();" aria-label="Kapat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: var(--radius-md); padding: 14px 16px;">
+          <div style="font-weight: 700; color: #60a5fa; margin-bottom: 4px;">Sunucu Adresiniz (LAN Ağında):</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Ajanları kurarken bağlanacakları sunucu URL adresidir:</div>
+          <div id="server-ip-list" style="display: flex; flex-direction: column; gap: 6px;">
+            <div class="code-snippet">
+              <span id="guide-server-url">http://127.0.0.1:5099</span>
+              <button class="btn btn-outline btn-sm" onclick="copyText(document.getElementById('guide-server-url').textContent);">Kopyala</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-title">Ajan Klasörünü Hedef Bilgisayara Kopyalayın</div>
+            <div class="step-desc">
+              Sunucu projenizin <code>dist\agent\win-x64</code> klasörünü hedef bilgisayarda istediğiniz bir yere (örn: <code>C:\OgmAgent</code>) kopyalayın.
+            </div>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-title">Yönetici Olarak Kurun (Otomatik Windows Servisi)</div>
+            <div class="step-desc">
+              Klasördeki <code>install-agent.cmd</code> dosyasına <strong>Sağ tık &gt; Yönetici olarak çalıştır</strong> deyin.
+              Sunucu adresi sorulduğunda yukarıdaki adresi girin (örn: <code>http://192.168.1.X:5099</code>).
+            </div>
+            <div class="code-snippet">
+              <span>install-agent.cmd</span>
+              <span style="color: var(--text-dim); font-size: 11px;">(Windows Servisi olarak kaydedilir)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-title">Tam Otomatik &amp; Arka Planda Görünmez Çalışma</div>
+            <div class="step-desc">
+              Ajan kurulduktan sonra bilgisayar her açıldığında Windows başlamasıyla birlikte <strong>arka planda sessizce</strong> otomatik açılır. Hiçbir pencere veya simge görünmez.
+            </div>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <div class="step-title">Çevrimdışı Kuyruk &amp; Dayanıklılık</div>
+            <div class="step-desc">
+              Sunucu bilgisayarı kapalı olsa veya ağ kopsa bile, yazıcıdan çıkan tüm dosyalar hedef bilgisayarın diskinde güvenle saklanır. Ağ geri geldiğinde sırayla sunucuya gönderilir. Hiçbir çıktı kaybolmaz.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeGuideModal();">Anladım</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Info Diagnostics Modal -->
+  <div id="modal-sysinfo" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 600px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            Sunucu &amp; Sistem Bilgisi
+          </div>
+          <div class="modal-subtitle">OGM Print Server çalışma parametreleri</div>
+        </div>
+        <button class="modal-close" onclick="closeSysinfoModal();" aria-label="Kapat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="detail-grid">
+          <div class="detail-tile">
+            <span class="detail-label">Sunucu Sürümü</span>
+            <span class="detail-value" id="sys-version">1.0.0 (Release)</span>
+          </div>
+          <div class="detail-tile">
+            <span class="detail-label">Çalışma Süresi (Uptime)</span>
+            <span class="detail-value" id="sys-uptime">-</span>
+          </div>
+          <div class="detail-tile">
+            <span class="detail-label">Port &amp; Protokol</span>
+            <span class="detail-value">HTTP 5099 (REST + SSE)</span>
+          </div>
+          <div class="detail-tile">
+            <span class="detail-label">Heartbeat Eşiği</span>
+            <span class="detail-value" id="sys-threshold">90 saniye</span>
+          </div>
+          <div class="detail-tile" style="grid-column: 1 / -1;">
+            <span class="detail-label">Yerel Ağ IP Adresleri (LAN)</span>
+            <span class="detail-value" id="sys-ips" style="font-family: var(--font-mono); color: var(--accent);">-</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeSysinfoModal();">Tamam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-time Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span>OGM PrintAudit Enterprise • Canlı Veri Akışı: Server-Sent Events (SSE) • © 2026</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

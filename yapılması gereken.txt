@@ -1,0 +1,14 @@
+şimdi 2 adet uygulamamız olacak bunlardan 1 i bizim kendi pc mizde açacağımız sunucu uygulaması 
+
+diğer uygulama ise bu sunucu uygulamasıyla bağlantılı olan ona veri gönderen bir uygulama olacak
+
+amacımız 2 inci uygulama kurduğumuz pc leri izleyecek ve Windows pc lerde yazıcıdan cıktı alınan şeyleri yazıcıdan cıkarılan dosyaları kaydedip bizim 1 inci uygulamaya gönderecek 
+
+uygulamalar pc ler aynı ağda bulunacak
+
+1 inci uygulamada bize panel lazım orda uygulamanın acık olduğu pc ler gelen veriler gözükecek
+
+uygulama 2 yi bi pc ye bir kere kuracağız ve kurdugumuzda o hep pc acıldıktan sonra oto acılacak ama arka planda yani görünmeyecek
+
+uygulama 2 mesela sunucu ile baglantıyı kuramadı ve dosyayı gonderemedi bu durumda dosyayı kaydedecek ve sunucu ile baglantısı oldugunda gondermek icin sıraya acılacak
+
