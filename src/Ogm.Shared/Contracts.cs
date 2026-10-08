@@ -96,7 +96,8 @@ public sealed record JobSummary(
     int TotalPages,
     string Sha256,
     DateTimeOffset ReceivedUtc,
-    bool HasPdf = false);
+    bool HasPdf = false,
+    IReadOnlyList<string>? DlpAlerts = null);
 
 /// <summary>
 /// Panelin tam durum anlik goruntusu.
@@ -151,4 +152,26 @@ public sealed record JobPreview(
     long TotalBytes,
     string DetectedFormat,
     IReadOnlyList<string> ExtractedStrings,
-    string HexDump);
+    string HexDump,
+    IReadOnlyList<string>? DlpAlerts = null);
+
+/// <summary>
+/// Web paneli giris durumu bilgisi.
+/// </summary>
+public sealed record AuthStatusResponse(
+    bool AuthRequired,
+    bool Authenticated);
+
+/// <summary>
+/// Web paneli giris istegi.
+/// </summary>
+public sealed record LoginRequest(
+    string Password);
+
+/// <summary>
+/// Web paneli giris cevabi.
+/// </summary>
+public sealed record LoginResponse(
+    bool Success,
+    string? Token,
+    string? Message);

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Ogm.Agent.Configuration;
 
 namespace Ogm.Agent.Print;
@@ -8,7 +9,8 @@ namespace Ogm.Agent.Print;
 ///
 /// Gorevleri:
 /// 1) Sistemdeki tum yazicilarda "Yazdirilan belgeleri sakla" (KeepPrintedJobs)
-///    ayarini kullanici mudahalesine gerek kalmadan otomatik olarak acar.
+///    ayarini native Win32 Spooler API (winspool.drv) ile 0ms gecikmeyle ve
+///    harici powershell sureci baslatmadan acar (EDR/Antivirus dostu).
 /// 2) Yeni eklenen yazicilari periyodik olarak tespit edip bu ayari onlar icin de acar.
 /// 3) Yazdirilmasi tamamlanmis ("Printed" durumundaki) isleri spooler kuyrugundan
 ///    temizleyerek diskin sismesini engeller.
@@ -26,7 +28,7 @@ public sealed class PrinterManager
 
     /// <summary>
     /// Sistemdeki tum yazicilari kontrol eder; KeepPrintedJobs ayari false olanlari
-    /// otomatik olarak true yapar.
+    /// native Win32 API ile otomatik olarak true yapar.
     /// </summary>
     public async Task EnsureKeepPrintedJobsAsync(CancellationToken ct = default)
     {
@@ -35,32 +37,18 @@ public sealed class PrinterManager
 
         try
         {
-            // Yalnizca KeepPrintedJobs = false olan yazicilari bul ve guncelle
-            const string script = "Get-Printer | Where-Object { -not $_.KeepPrintedJobs } | " +
-                                  "ForEach-Object { Set-Printer -Name $_.Name -KeepPrintedJobs $true; Write-Output $_.Name }";
-
-            var output = await RunPowerShellAsync(script, ct).ConfigureAwait(false);
-
-            if (!string.IsNullOrWhiteSpace(output))
+            var updated = EnsureKeepPrintedJobsNative();
+            if (updated > 0)
             {
-                var printerNames = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var name in printerNames)
-                {
-                    _logger.LogInformation("Yazicida 'Yazdirilan belgeleri sakla' otomatik aktif edildi: {Printer}", name.Trim());
-                }
+                _logger.LogInformation("{Count} yazicida 'Yazdirilan belgeleri sakla' basariyla aktif edildi (Native Win32).", updated);
+                return;
             }
-            else
-            {
-                _logger.LogDebug("Tum yazicilarda KeepPrintedJobs ayari zaten acik.");
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Iptal edildi
+            _logger.LogDebug("Tum yazicilarda KeepPrintedJobs ayari zaten acik.");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Yazicilarin KeepPrintedJobs ayari denetlenirken hata olustu.");
+            _logger.LogDebug(ex, "Native Win32 ile KeepPrintedJobs ayari yapilamadi, PowerShell deneniyor.");
+            await FallbackKeepPrintedJobsPowerShellAsync(ct).ConfigureAwait(false);
         }
     }
 
@@ -72,24 +60,19 @@ public sealed class PrinterManager
     {
         try
         {
-            const string script = "Get-Printer | ForEach-Object { " +
-                                  "Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue | " +
-                                  "Where-Object { $_.JobStatus -match 'Printed' } | " +
-                                  "Remove-PrintJob -ErrorAction SilentlyContinue }";
-
-            await RunPowerShellAsync(script, ct).ConfigureAwait(false);
-            _logger.LogDebug("Tamamlanmis yazdirma isleri spooler kuyrugundan temizlendi.");
+            var deleted = CleanupPrintedJobsNative();
+            if (deleted > 0)
+            {
+                _logger.LogDebug("{Count} tamamlanmis yazdirma isi kuyruktan temizlendi (Native Win32).", deleted);
+            }
 
             // Ek olarak spool klasorunde kalmis cok eski (2 saatten eski) gecici dosyalari temizle
             CleanupOrphanSpoolFiles();
         }
-        catch (OperationCanceledException)
-        {
-            // Iptal edildi
-        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Spooler kuyrugu temizlenirken hata olustu.");
+            _logger.LogDebug(ex, "Native Win32 kuyruk temizligi yapilamadi, PowerShell deneniyor.");
+            await FallbackCleanupPowerShellAsync(ct).ConfigureAwait(false);
         }
     }
 
@@ -117,6 +100,138 @@ public sealed class PrinterManager
             await EnsureKeepPrintedJobsAsync(ct).ConfigureAwait(false);
             await CleanupPrintedJobsAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    private int EnsureKeepPrintedJobsNative()
+    {
+        int updatedCount = 0;
+        int flags = WinSpoolApi.PRINTER_ENUM_LOCAL | WinSpoolApi.PRINTER_ENUM_CONNECTIONS;
+        WinSpoolApi.EnumPrinters(flags, null, 2, IntPtr.Zero, 0, out int bytesNeeded, out _);
+        if (bytesNeeded <= 0) return 0;
+
+        IntPtr pPrinters = Marshal.AllocHGlobal(bytesNeeded);
+        try
+        {
+            if (!WinSpoolApi.EnumPrinters(flags, null, 2, pPrinters, bytesNeeded, out _, out int count))
+                return 0;
+
+            int structSize = Marshal.SizeOf<WinSpoolApi.PRINTER_INFO_2>();
+            for (int i = 0; i < count; i++)
+            {
+                IntPtr pCurrent = IntPtr.Add(pPrinters, i * structSize);
+                var info = Marshal.PtrToStructure<WinSpoolApi.PRINTER_INFO_2>(pCurrent);
+                if (string.IsNullOrEmpty(info.pPrinterName)) continue;
+
+                if ((info.Attributes & WinSpoolApi.PRINTER_ATTRIBUTE_KEEPPRINTEDJOBS) == 0)
+                {
+                    var defaults = new WinSpoolApi.PRINTER_DEFAULTS
+                    {
+                        DesiredAccess = WinSpoolApi.PRINTER_ALL_ACCESS
+                    };
+
+                    if (WinSpoolApi.OpenPrinter(info.pPrinterName, out IntPtr hPrinter, ref defaults))
+                    {
+                        try
+                        {
+                            info.Attributes |= WinSpoolApi.PRINTER_ATTRIBUTE_KEEPPRINTEDJOBS;
+                            Marshal.StructureToPtr(info, pCurrent, fDeleteOld: false);
+                            if (WinSpoolApi.SetPrinter(hPrinter, 2, pCurrent, 0))
+                            {
+                                updatedCount++;
+                                _logger.LogInformation("Yazicida KeepPrintedJobs aktif edildi: {Printer}", info.pPrinterName);
+                            }
+                        }
+                        finally
+                        {
+                            WinSpoolApi.ClosePrinter(hPrinter);
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pPrinters);
+        }
+
+        return updatedCount;
+    }
+
+    private int CleanupPrintedJobsNative()
+    {
+        int deletedCount = 0;
+        int flags = WinSpoolApi.PRINTER_ENUM_LOCAL | WinSpoolApi.PRINTER_ENUM_CONNECTIONS;
+        WinSpoolApi.EnumPrinters(flags, null, 2, IntPtr.Zero, 0, out int bytesNeeded, out _);
+        if (bytesNeeded <= 0) return 0;
+
+        IntPtr pPrinters = Marshal.AllocHGlobal(bytesNeeded);
+        try
+        {
+            if (!WinSpoolApi.EnumPrinters(flags, null, 2, pPrinters, bytesNeeded, out _, out int count))
+                return 0;
+
+            int structSize = Marshal.SizeOf<WinSpoolApi.PRINTER_INFO_2>();
+            for (int i = 0; i < count; i++)
+            {
+                IntPtr pCurrent = IntPtr.Add(pPrinters, i * structSize);
+                var info = Marshal.PtrToStructure<WinSpoolApi.PRINTER_INFO_2>(pCurrent);
+                if (string.IsNullOrEmpty(info.pPrinterName)) continue;
+
+                var defaults = new WinSpoolApi.PRINTER_DEFAULTS
+                {
+                    DesiredAccess = WinSpoolApi.PRINTER_ALL_ACCESS
+                };
+
+                if (WinSpoolApi.OpenPrinter(info.pPrinterName, out IntPtr hPrinter, ref defaults))
+                {
+                    try
+                    {
+                        WinSpoolApi.EnumJobs(hPrinter, 0, 100, 2, IntPtr.Zero, 0, out int jobsBytesNeeded, out _);
+                        if (jobsBytesNeeded > 0)
+                        {
+                            IntPtr pJobs = Marshal.AllocHGlobal(jobsBytesNeeded);
+                            try
+                            {
+                                if (WinSpoolApi.EnumJobs(hPrinter, 0, 100, 2, pJobs, jobsBytesNeeded, out _, out int jobCount))
+                                {
+                                    int jobStructSize = Marshal.SizeOf<WinSpoolApi.JOB_INFO_2>();
+                                    for (int j = 0; j < jobCount; j++)
+                                    {
+                                        IntPtr pJobCurrent = IntPtr.Add(pJobs, j * jobStructSize);
+                                        var jobInfo = Marshal.PtrToStructure<WinSpoolApi.JOB_INFO_2>(pJobCurrent);
+
+                                        bool isPrinted = (jobInfo.Status & (WinSpoolApi.JOB_STATUS_PRINTED | WinSpoolApi.JOB_STATUS_COMPLETE)) != 0
+                                                         || (jobInfo.pStatus != null && jobInfo.pStatus.Contains("Printed", StringComparison.OrdinalIgnoreCase));
+
+                                        if (isPrinted)
+                                        {
+                                            if (WinSpoolApi.SetJob(hPrinter, jobInfo.JobId, 0, IntPtr.Zero, WinSpoolApi.JOB_CONTROL_DELETE))
+                                            {
+                                                deletedCount++;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                Marshal.FreeHGlobal(pJobs);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        WinSpoolApi.ClosePrinter(hPrinter);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pPrinters);
+        }
+
+        return deletedCount;
     }
 
     private void CleanupOrphanSpoolFiles()
@@ -156,6 +271,36 @@ public sealed class PrinterManager
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Eski spool dosyalari taranirken hata.");
+        }
+    }
+
+    private async Task FallbackKeepPrintedJobsPowerShellAsync(CancellationToken ct)
+    {
+        try
+        {
+            const string script = "Get-Printer | Where-Object { -not $_.KeepPrintedJobs } | " +
+                                  "ForEach-Object { Set-Printer -Name $_.Name -KeepPrintedJobs $true }";
+            await RunPowerShellAsync(script, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "PowerShell KeepPrintedJobs yedek calistirmasi basarisiz.");
+        }
+    }
+
+    private async Task FallbackCleanupPowerShellAsync(CancellationToken ct)
+    {
+        try
+        {
+            const string script = "Get-Printer | ForEach-Object { " +
+                                  "Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue | " +
+                                  "Where-Object { $_.JobStatus -match 'Printed' } | " +
+                                  "Remove-PrintJob -ErrorAction SilentlyContinue }";
+            await RunPowerShellAsync(script, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "PowerShell kuyruk temizleme yedek calistirmasi basarisiz.");
         }
     }
 

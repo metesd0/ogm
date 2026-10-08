@@ -55,6 +55,9 @@ public sealed class OutboxQueue
         Directory.CreateDirectory(SentDirectory);
         Directory.CreateDirectory(FailedDirectory);
 
+        // Eski sent ve failed kayitlarini temizle (diskte sonsuz buyumeyi engelle)
+        PruneHistory(TimeSpan.FromDays(7), TimeSpan.FromDays(30));
+
         // Sayaçlar acilista bir kez hesaplanir; sonrasinda bellekten okunur.
         _pendingCount = CountDirectories(OutboxDirectory);
         _sentCount = CountDirectories(SentDirectory);
@@ -298,6 +301,47 @@ public sealed class OutboxQueue
         catch
         {
             return 0;
+        }
+    }
+
+    /// <summary>
+    /// Eski gonderilmis (sent) ve basarisiz (failed) is kayitlarini silerek
+    /// diskte sinirsiz dosya birikmesini engeller.
+    /// </summary>
+    public void PruneHistory(TimeSpan sentMaxAge, TimeSpan failedMaxAge)
+    {
+        lock (_gate)
+        {
+            PruneDirectory(SentDirectory, sentMaxAge, ref _sentCount);
+            PruneDirectory(FailedDirectory, failedMaxAge, ref _failedCount);
+        }
+    }
+
+    private void PruneDirectory(string root, TimeSpan maxAge, ref int counter)
+    {
+        try
+        {
+            if (!Directory.Exists(root))
+                return;
+
+            var threshold = DateTime.UtcNow - maxAge;
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                try
+                {
+                    var di = new DirectoryInfo(dir);
+                    if (di.LastWriteTimeUtc < threshold)
+                    {
+                        Directory.Delete(dir, recursive: true);
+                        Interlocked.Decrement(ref counter);
+                    }
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Klasor temizligi sirasinda hata: {Path}", root);
         }
     }
 

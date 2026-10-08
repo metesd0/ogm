@@ -138,18 +138,25 @@ public sealed class SpoolWatcher : IDisposable
             var baseName = Path.GetFileNameWithoutExtension(splPath);
             var info = ReadShadowInfo(splPath, baseName);
 
+            // Windows PrintService Event 307'den kesin sayfa sayisi ve dosya adini zenginlestir
+            var (logPages, logDocName, logUser) = PrintLogReader.TryGetRecentJobInfo(info.PrinterName, TimeSpan.FromMinutes(2));
+
+            var docName = !string.IsNullOrWhiteSpace(logDocName) ? logDocName : (info.DocumentName ?? baseName);
+            var userName = !string.IsNullOrWhiteSpace(logUser) ? logUser : (info.UserName ?? _identity.UserName);
+            var totalPages = logPages ?? 0;
+
             // Meta veri iskeleti; boyut ve SHA-256 akis halinde kopyalama
             // sirasinda OutboxQueue tarafindan doldurulur.
             var template = new PrintJobMeta(
                 JobId: Guid.NewGuid().ToString("N"),
                 AgentId: _identity.AgentId,
                 MachineName: _identity.MachineName,
-                UserName: info.UserName ?? _identity.UserName,
+                UserName: userName,
                 PrinterName: info.PrinterName ?? "Unknown",
-                DocumentName: info.DocumentName ?? baseName,
+                DocumentName: docName,
                 DataType: info.DataType ?? "RAW",
                 TotalBytes: length,
-                TotalPages: 0,
+                TotalPages: totalPages,
                 Sha256: string.Empty,
                 CapturedUtc: DateTimeOffset.UtcNow,
                 SourceFileName: Path.GetFileName(splPath));

@@ -11,13 +11,53 @@ namespace Ogm.Server.Api;
 /// Sunucunun HTTP uç noktalarini tanimlar.
 ///
 /// Ajanlari hedefleyen uç noktalar (register/heartbeat/jobs) API anahtari ile
-/// korunur. Paneli besleyen salt-okunur uç noktalar (state/events) yerel agda
-/// aciktir; istenirse ileride bunlar da korunabilir.
+/// korunur. Paneli besleyen uç noktalar (state/events/jobs) DashboardPassword
+/// tanimlanmissa kimlik dogrulama ile korunur; bos ise LAN'da serbest calisir.
 /// </summary>
 public static class OgmApi
 {
+    private const string DashboardAuthHeader = "X-Ogm-Dashboard-Auth";
+    private const string DashboardCookieName = "ogm_dash_token";
+
     public static void MapOgmApi(this WebApplication app)
     {
+        // ---- Kimlik Dogrulama (Web Paneli) --------------------------------
+        app.MapGet("/api/auth/status", (HttpContext ctx, ServerOptions options) =>
+        {
+            var required = !string.IsNullOrWhiteSpace(options.DashboardPassword);
+            var authorized = IsDashboardAuthorized(ctx, options);
+            return Results.Ok(new AuthStatusResponse(required, authorized));
+        });
+
+        app.MapPost("/api/auth/login", (HttpContext ctx, LoginRequest req, ServerOptions options) =>
+        {
+            if (string.IsNullOrWhiteSpace(options.DashboardPassword))
+            {
+                return Results.Ok(new LoginResponse(true, "open", "Sifre korumasi kapali."));
+            }
+
+            if (!VerifyDashboardPassword(req.Password, options.DashboardPassword))
+            {
+                return Results.Json(new LoginResponse(false, null, "Hatali sifre."), statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            var token = ComputeDashboardToken(options.DashboardPassword);
+            ctx.Response.Cookies.Append(DashboardCookieName, token, new CookieOptions
+            {
+                HttpOnly = true,
+                SameSite = SameSiteMode.Lax,
+                MaxAge = TimeSpan.FromDays(7)
+            });
+
+            return Results.Ok(new LoginResponse(true, token, "Giris basarili."));
+        });
+
+        app.MapPost("/api/auth/logout", (HttpContext ctx) =>
+        {
+            ctx.Response.Cookies.Delete(DashboardCookieName);
+            return Results.Ok();
+        });
+
         // ---- Ajan kapisi: kayit -------------------------------------------
         app.MapPost(OgmProtocol.Routes.Register,
             (HttpContext ctx, RegisterRequest request, ServerStore store, ServerOptions options) =>
@@ -91,12 +131,24 @@ public static class OgmApi
             .DisableAntiforgery();
 
         // ---- Panel: durum anlik goruntusu ---------------------------------
-        app.MapGet(OgmProtocol.Routes.State, (ServerStore store) => Results.Ok(store.GetState()));
+        app.MapGet(OgmProtocol.Routes.State, (HttpContext ctx, ServerStore store, ServerOptions options) =>
+        {
+            if (!IsDashboardAuthorized(ctx, options))
+                return Results.Unauthorized();
+
+            return Results.Ok(store.GetState());
+        });
 
         // ---- Panel: canli akis (Server-Sent Events) -----------------------
         app.MapGet(OgmProtocol.Routes.Events,
-            async (HttpContext ctx, EventHub hub, ServerStore store, CancellationToken ct) =>
+            async (HttpContext ctx, EventHub hub, ServerStore store, ServerOptions options, CancellationToken ct) =>
             {
+                if (!IsDashboardAuthorized(ctx, options))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return;
+                }
+
                 ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
                 ctx.Response.Headers.CacheControl = "no-cache";
                 ctx.Response.Headers.Connection = "keep-alive";
@@ -123,8 +175,11 @@ public static class OgmApi
             });
 
         // ---- Panel: isin ham verisini indir -------------------------------
-        app.MapGet("/api/jobs/{jobId}/payload", (string jobId, ServerStore store) =>
+        app.MapGet("/api/jobs/{jobId}/payload", (string jobId, HttpContext ctx, ServerStore store, ServerOptions options) =>
         {
+            if (!IsDashboardAuthorized(ctx, options))
+                return Results.Unauthorized();
+
             var path = store.GetPayloadPath(jobId);
             return path is null
                 ? Results.NotFound()
@@ -132,8 +187,11 @@ public static class OgmApi
         });
 
         // ---- Panel: isin PDF hali (tarayicida dogrudan goruntuleme) -------
-        app.MapGet("/api/jobs/{jobId}/pdf", (string jobId, ServerStore store) =>
+        app.MapGet("/api/jobs/{jobId}/pdf", (string jobId, HttpContext ctx, ServerStore store, ServerOptions options) =>
         {
+            if (!IsDashboardAuthorized(ctx, options))
+                return Results.Unauthorized();
+
             var pdfPath = store.GetPdfPath(jobId);
             if (pdfPath is null || !File.Exists(pdfPath))
                 return Results.NotFound();
@@ -142,8 +200,11 @@ public static class OgmApi
         });
 
         // ---- Panel: isin PDF olarak indirilmesi --------------------------
-        app.MapGet("/api/jobs/{jobId}/download-pdf", (string jobId, ServerStore store) =>
+        app.MapGet("/api/jobs/{jobId}/download-pdf", (string jobId, HttpContext ctx, ServerStore store, ServerOptions options) =>
         {
+            if (!IsDashboardAuthorized(ctx, options))
+                return Results.Unauthorized();
+
             var pdfPath = store.GetPdfPath(jobId);
             if (pdfPath is null || !File.Exists(pdfPath))
                 return Results.NotFound();
@@ -156,9 +217,12 @@ public static class OgmApi
             return Results.File(pdfPath, "application/pdf", safeName + ".pdf");
         });
 
-        // ---- Panel: isin onizleme ve metin ozeti --------------------------
-        app.MapGet("/api/jobs/{jobId}/preview", (string jobId, ServerStore store) =>
+        // ---- Panel: isin onizleme, metin ve DLP ozeti --------------------
+        app.MapGet("/api/jobs/{jobId}/preview", (string jobId, HttpContext ctx, ServerStore store, ServerOptions options) =>
         {
+            if (!IsDashboardAuthorized(ctx, options))
+                return Results.Unauthorized();
+
             var path = store.GetPayloadPath(jobId);
             if (path is null || !File.Exists(path))
                 return Results.NotFound();
@@ -175,7 +239,7 @@ public static class OgmApi
         });
 
         // ---- Panel: sunucu sistem bilgisi ve ag adresleri -----------------
-        app.MapGet("/api/server/info", (ServerOptions options) =>
+        app.MapGet("/api/server/info", (HttpContext ctx, ServerOptions options) =>
         {
             var localIps = GetLocalIpAddresses();
             var process = System.Diagnostics.Process.GetCurrentProcess();
@@ -189,7 +253,8 @@ public static class OgmApi
                 localIps,
                 heartbeatSeconds = options.HeartbeatSeconds,
                 onlineThresholdSeconds = options.OnlineThresholdSeconds,
-                maxJobsRetained = options.MaxJobsRetained
+                maxJobsRetained = options.MaxJobsRetained,
+                authRequired = !string.IsNullOrWhiteSpace(options.DashboardPassword)
             });
         });
     }
@@ -209,18 +274,17 @@ public static class OgmApi
         }
 
         var format = DetectFormat(buffer);
-        var extracted = ExtractPrintableStrings(buffer);
+        var extracted = PayloadTextExtractor.ExtractPrintableStrings(buffer);
         var hexDump = GenerateHexDump(buffer, Math.Min(buffer.Length, 512));
+        var dlpAlerts = DlpAnalyzer.Analyze(extracted);
 
-        return new JobPreview(jobId, totalBytes, format, extracted, hexDump);
+        return new JobPreview(jobId, totalBytes, format, extracted, hexDump, dlpAlerts.Count > 0 ? dlpAlerts : null);
     }
 
     private static string DetectFormat(byte[] data)
     {
         if (data.Length >= 4)
         {
-            // Gorsel formatlari (kullanici bir resim yazdirdiginda) PDF'e
-            // cevrilmemeli; panelde dogru sekilde tanitilmali.
             if (data.Length >= 8 && data[0] == 0x89 && data[1] == 0x50 &&
                 data[2] == 0x4E && data[3] == 0x47)
                 return "PNG Görüntü";
@@ -248,6 +312,7 @@ public static class OgmApi
                 return "Windows EMF / GDI Çıktısı";
             }
         }
+
         var ascii = Encoding.ASCII.GetString(data, 0, Math.Min(data.Length, 256));
         if (ascii.StartsWith("%PDF-", StringComparison.OrdinalIgnoreCase))
             return "PDF Dokümanı";
@@ -261,79 +326,6 @@ public static class OgmApi
             return "ESC/POS Fiş / Termal Çıktı";
 
         return "Ham Yazıcı Verisi (RAW / SPL)";
-    }
-
-    private static IReadOnlyList<string> ExtractPrintableStrings(byte[] data)
-    {
-        var result = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // 1) UTF-16LE tara (Windows EMF sıkça wchar_t metin içerir)
-        var utf16Chars = new StringBuilder();
-        for (int i = 0; i < data.Length - 1; i += 2)
-        {
-            byte b1 = data[i];
-            byte b2 = data[i + 1];
-            if (b2 == 0 && b1 >= 32 && b1 <= 126)
-            {
-                utf16Chars.Append((char)b1);
-            }
-            else
-            {
-                if (utf16Chars.Length >= 4)
-                {
-                    var s = utf16Chars.ToString().Trim();
-                    if (s.Length >= 4 && !seen.Contains(s) && !IsBinaryJunk(s))
-                    {
-                        seen.Add(s);
-                        result.Add(s);
-                        if (result.Count >= 30) break;
-                    }
-                }
-                utf16Chars.Clear();
-            }
-        }
-
-        // 2) ASCII / 8-bit tara
-        if (result.Count < 30)
-        {
-            var asciiChars = new StringBuilder();
-            for (int i = 0; i < data.Length; i++)
-            {
-                byte b = data[i];
-                if (b >= 32 && b <= 126)
-                {
-                    asciiChars.Append((char)b);
-                }
-                else
-                {
-                    if (asciiChars.Length >= 4)
-                    {
-                        var s = asciiChars.ToString().Trim();
-                        if (s.Length >= 4 && !seen.Contains(s) && !IsBinaryJunk(s))
-                        {
-                            seen.Add(s);
-                            result.Add(s);
-                            if (result.Count >= 40) break;
-                        }
-                    }
-                    asciiChars.Clear();
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private static bool IsBinaryJunk(string s)
-    {
-        int lettersOrDigits = 0;
-        foreach (var c in s)
-        {
-            if (char.IsLetterOrDigit(c) || c == ' ' || c == '.' || c == '-' || c == '_')
-                lettersOrDigits++;
-        }
-        return lettersOrDigits < (s.Length * 0.7);
     }
 
     private static string GenerateHexDump(byte[] data, int length)
@@ -409,5 +401,53 @@ public static class OgmApi
         var expectedBytes = Encoding.UTF8.GetBytes(options.ApiKey);
         return CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
     }
-}
 
+    private static bool IsDashboardAuthorized(HttpContext ctx, ServerOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.DashboardPassword))
+            return true;
+
+        var expectedToken = ComputeDashboardToken(options.DashboardPassword);
+
+        // 1. Header kontrolu
+        if (ctx.Request.Headers.TryGetValue(DashboardAuthHeader, out var authHeader))
+        {
+            var val = authHeader.ToString();
+            if (val.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                val = val[7..].Trim();
+            if (val == expectedToken || VerifyDashboardPassword(val, options.DashboardPassword))
+                return true;
+        }
+
+        // 2. Cookie kontrolu
+        if (ctx.Request.Cookies.TryGetValue(DashboardCookieName, out var cookieVal))
+        {
+            if (cookieVal == expectedToken)
+                return true;
+        }
+
+        // 3. Query string kontrolu (SSE EventSource icin)
+        if (ctx.Request.Query.TryGetValue("token", out var queryToken))
+        {
+            var val = queryToken.ToString();
+            if (val == expectedToken || VerifyDashboardPassword(val, options.DashboardPassword))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string ComputeDashboardToken(string password)
+    {
+        var input = Encoding.UTF8.GetBytes(password + "-ogm-dash-salt");
+        var hash = SHA256.HashData(input);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static bool VerifyDashboardPassword(string provided, string expected)
+    {
+        var provBytes = Encoding.UTF8.GetBytes(provided);
+        var expBytes = Encoding.UTF8.GetBytes(expected);
+        return CryptographicOperations.FixedTimeEquals(provBytes, expBytes);
+    }
+}

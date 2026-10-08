@@ -15,6 +15,12 @@ public sealed class ServerOptions
     public string ApiKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Web paneli yonetici giris sifresi. Bos birakilirsa panel sifresiz (acik) calisir.
+    /// Doldurulursa paneli ve veri uc noktalarini yetkisiz erisime karsi korur.
+    /// </summary>
+    public string DashboardPassword { get; set; } = string.Empty;
+
+    /// <summary>
     /// Sunucunun veri klasoru (ajan kayitlari, is kayitlari, yuklenen dosyalar).
     /// Bos ise %ProgramData%\Ogm\Server kullanilir.
     /// </summary>

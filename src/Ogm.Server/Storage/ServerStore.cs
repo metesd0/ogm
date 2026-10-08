@@ -158,6 +158,8 @@ public sealed class ServerStore : IDisposable
             }
         }
 
+        var dlpAlerts = PayloadTextExtractor.AnalyzeDlp(payloadPath);
+
         var now = DateTimeOffset.UtcNow;
         var summary = new JobSummary(
             JobId: meta.JobId,
@@ -171,7 +173,8 @@ public sealed class ServerStore : IDisposable
             TotalPages: meta.TotalPages,
             Sha256: sha256,
             ReceivedUtc: now,
-            HasPdf: hasPdf);
+            HasPdf: hasPdf,
+            DlpAlerts: dlpAlerts.Count > 0 ? dlpAlerts : null);
 
         var removed = new List<string>();
         lock (_gate)
@@ -328,7 +331,15 @@ public sealed class ServerStore : IDisposable
                         hasPdf = File.Exists(splPath) && JobConverter.CanConvert(splPath);
                     }
 
-                    _jobs.AddLast(job with { HasPdf = hasPdf });
+                    var dlpAlerts = job.DlpAlerts;
+                    if (dlpAlerts is null || dlpAlerts.Count == 0)
+                    {
+                        var splPath = Path.Combine(_jobsDirectory, job.JobId + ".spl");
+                        var alerts = PayloadTextExtractor.AnalyzeDlp(splPath);
+                        if (alerts.Count > 0) dlpAlerts = alerts;
+                    }
+
+                    _jobs.AddLast(job with { HasPdf = hasPdf, DlpAlerts = dlpAlerts });
                 }
             }
 

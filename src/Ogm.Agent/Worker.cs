@@ -58,10 +58,11 @@ public sealed class AgentWorker : BackgroundService
         var heartbeatLoop = HeartbeatLoopAsync(stoppingToken);
         var uploadLoop = UploadLoopAsync(stoppingToken);
         var maintenanceLoop = _printerManager.MaintenanceLoopAsync(stoppingToken);
+        var pruneLoop = QueuePruneLoopAsync(stoppingToken);
 
         try
         {
-            await Task.WhenAll(heartbeatLoop, uploadLoop, maintenanceLoop).ConfigureAwait(false);
+            await Task.WhenAll(heartbeatLoop, uploadLoop, maintenanceLoop, pruneLoop).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -184,6 +185,26 @@ public sealed class AgentWorker : BackgroundService
                     if (!await DelayAsync(retryInterval, ct).ConfigureAwait(false))
                         return;
                 }
+            }
+        }
+    }
+
+    private async Task QueuePruneLoopAsync(CancellationToken ct)
+    {
+        var interval = TimeSpan.FromHours(4);
+        while (!ct.IsCancellationRequested)
+        {
+            if (!await DelayAsync(interval, ct).ConfigureAwait(false))
+                break;
+
+            try
+            {
+                _queue.PruneHistory(TimeSpan.FromDays(7), TimeSpan.FromDays(30));
+                _logger.LogDebug("Kuyruk gecmisi temizlendi.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Kuyruk gecmisi temizlenirken hata.");
             }
         }
     }

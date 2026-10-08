@@ -100,6 +100,9 @@ public static class AgentInstaller
             RunCmd("sc.exe", $"description \"{ServiceName}\" \"{Description}\"");
             RunCmd("sc.exe", $"failure \"{ServiceName}\" reset= 86400 actions= restart/5000/restart/5000/restart/5000");
 
+            // Windows PrintService Operasyonel logunu aktif et (Event ID 307 icin)
+            RunCmd("wevtutil.exe", "set-log \"Microsoft-Windows-PrintService/Operational\" /enabled:true");
+
             // Sistemdeki yazicilarda KeepPrintedJobs ayarini otomatik ac
             RunPowerShell("Get-Printer | Where-Object { -not $_.KeepPrintedJobs } | Set-Printer -KeepPrintedJobs $true");
 

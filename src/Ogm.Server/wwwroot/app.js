@@ -43,6 +43,7 @@
   const filterPrinterEl = document.getElementById('filter-printer');
   const filterMachineEl = document.getElementById('filter-machine');
   const filterDatatypeEl = document.getElementById('filter-datatype');
+  const filterDlpEl = document.getElementById('filter-dlp');
   const filterTimeEl = document.getElementById('filter-time');
   const sortJobsEl = document.getElementById('sort-jobs');
   const btnResetFilters = document.getElementById('btn-reset-filters');
@@ -69,11 +70,16 @@
   const btnSysinfo = document.getElementById('btn-sysinfo');
   const btnRefresh = document.getElementById('btn-refresh');
   const iconRefresh = document.getElementById('icon-refresh');
+  const btnLogout = document.getElementById('btn-logout');
 
   // Modals
   const modalJob = document.getElementById('modal-job');
   const modalGuide = document.getElementById('modal-guide');
   const modalSysinfo = document.getElementById('modal-sysinfo');
+  const modalLogin = document.getElementById('modal-login');
+  const formLogin = document.getElementById('form-login');
+  const inputLoginPassword = document.getElementById('input-login-password');
+  const loginError = document.getElementById('login-error');
 
   // Toast Container
   const toastContainer = document.getElementById('toast-container');
@@ -90,6 +96,7 @@
   let selectedPrinter = '';
   let selectedMachine = '';
   let selectedDatatype = '';
+  let selectedDlp = 'all';
   let selectedTime = 'all';
   let selectedSort = 'newest';
 
@@ -98,6 +105,8 @@
 
   let soundEnabled = localStorage.getItem('ogm_sound') !== 'false';
   let currentTheme = localStorage.getItem('ogm_theme') || 'dark';
+  let authToken = sessionStorage.getItem('ogm_dash_token') || '';
+  let activeEventSource = null;
 
   // --- Sound Alert System (Web Audio API Synthesizer) ---
   let audioCtx = null;
@@ -150,6 +159,29 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function apiFetch(url, options = {}) {
+    options = options || {};
+    options.headers = options.headers || {};
+    if (authToken) {
+      options.headers['X-Ogm-Dashboard-Auth'] = authToken;
+    }
+    return fetch(url, options);
+  }
+
+  function showLoginModal() {
+    if (modalLogin) {
+      modalLogin.style.display = 'flex';
+      modalLogin.classList.add('active');
+    }
+  }
+
+  function hideLoginModal() {
+    if (modalLogin) {
+      modalLogin.style.display = 'none';
+      modalLogin.classList.remove('active');
+    }
   }
 
   function fmtDateTime(iso) {
@@ -459,6 +491,9 @@
       if (selectedMachine && job.machineName !== selectedMachine) return false;
       if (selectedDatatype && (job.dataType || '').toUpperCase().indexOf(selectedDatatype) < 0) return false;
 
+      if (selectedDlp === 'flagged' && (!job.dlpAlerts || job.dlpAlerts.length === 0)) return false;
+      if (selectedDlp === 'clean' && (job.dlpAlerts && job.dlpAlerts.length > 0)) return false;
+
       if (selectedTime !== 'all') {
         const jobTime = Date.parse(job.receivedUtc);
         const now = Date.now();
@@ -468,7 +503,7 @@
       }
 
       if (jobFilterText) {
-        const text = [job.machineName, job.userName, job.printerName, job.documentName, job.dataType, job.sha256]
+        const text = [job.machineName, job.userName, job.printerName, job.documentName, job.dataType, job.sha256, (job.dlpAlerts || []).join(' ')]
           .join(' ')
           .toLowerCase();
         if (text.indexOf(jobFilterText) < 0) return false;
@@ -494,7 +529,7 @@
     jobsCount.textContent = `${filtered.length} iş`;
 
     // Filter Reset visibility
-    const isFiltered = jobFilterText || selectedPrinter || selectedMachine || selectedDatatype || selectedTime !== 'all';
+    const isFiltered = jobFilterText || selectedPrinter || selectedMachine || selectedDatatype || selectedDlp !== 'all' || selectedTime !== 'all';
     btnResetFilters.style.display = isFiltered ? 'inline-flex' : 'none';
     filterClearEl.style.display = jobFilterText ? 'block' : 'none';
 
@@ -576,6 +611,7 @@
             <div class="doc-name">
               ${docIcon}
               <span title="${esc(job.documentName)}">${esc(job.documentName || 'İsimsiz Belge')}</span>
+              ${job.dlpAlerts && job.dlpAlerts.length ? `<span class="badge-dlp" title="Hassas Bilgi: ${esc(job.dlpAlerts.join(', '))}">🛡️ ${esc(job.dlpAlerts[0])}</span>` : ''}
             </div>
           </td>
           <td>
@@ -788,7 +824,11 @@
   // --- Initial State & SSE Streaming ---
   async function loadInitialState() {
     try {
-      const response = await fetch('/api/state', { cache: 'no-store' });
+      const response = await apiFetch('/api/state');
+      if (response.status === 401) {
+        showLoginModal();
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         applyState(data);
@@ -800,10 +840,15 @@
 
   async function loadServerInfo() {
     try {
-      const res = await fetch('/api/server/info', { cache: 'no-store' });
+      const res = await apiFetch('/api/server/info');
       if (res.ok) {
         serverInfo = await res.json();
         updateServerInfoUI(serverInfo);
+        if (serverInfo.authRequired) {
+          btnLogout.style.display = 'inline-flex';
+        } else {
+          btnLogout.style.display = 'none';
+        }
       }
     } catch (err) {
       console.warn('Sunucu bilgisi alınamadı', err);
@@ -868,7 +913,14 @@
   }
 
   function connectStream() {
-    const source = new EventSource('/api/events');
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+
+    const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : '/api/events';
+    const source = new EventSource(sseUrl);
+    activeEventSource = source;
 
     source.onopen = function () {
       connEl.className = 'badge online';
@@ -910,6 +962,17 @@
     document.getElementById('md-agent-id').textContent = job.agentId || '-';
     document.getElementById('md-sha256').textContent = job.sha256 || '-';
 
+    // DLP Guvenlik Uyarisi Kutusu
+    const dlpBox = document.getElementById('md-dlp-box');
+    const dlpListEl = document.getElementById('md-dlp-list');
+    const dlpAlerts = job.dlpAlerts || [];
+    if (dlpAlerts.length > 0) {
+      dlpBox.style.display = 'flex';
+      dlpListEl.innerHTML = dlpAlerts.map(a => `<span class="dlp-alert-item">${esc(a)}</span>`).join('');
+    } else {
+      dlpBox.style.display = 'none';
+    }
+
     // PDF ve SPL İndirme / Görüntüleme Butonları
     const viewPdfBtn = document.getElementById('modal-view-pdf-btn');
     const dlPdfBtn = document.getElementById('modal-download-pdf-btn');
@@ -919,7 +982,7 @@
     dlPdfBtn.href = `/api/jobs/${encodeURIComponent(job.jobId)}/download-pdf`;
     dlSplBtn.href = `/api/jobs/${encodeURIComponent(job.jobId)}/payload`;
 
-    // PDF butonlari yalnizca donusturulebilir (PDF/XPS) islerde gorunur.
+    // PDF butonlari yalnizca donusturulebilir (PDF/XPS/EMF/Görsel) islerde gorunur.
     viewPdfBtn.style.display = job.hasPdf ? '' : 'none';
     dlPdfBtn.style.display = job.hasPdf ? '' : 'none';
     dlSplBtn.setAttribute('download', `${job.jobId}.spl`);
@@ -937,10 +1000,16 @@
     document.getElementById('preview-hex-box').textContent = 'Hex dökümü hazırlanıyor…';
 
     try {
-      const res = await fetch(`/api/jobs/${encodeURIComponent(job.jobId)}/preview`);
+      const res = await apiFetch(`/api/jobs/${encodeURIComponent(job.jobId)}/preview`);
       if (res.ok) {
         const preview = await res.json();
         document.getElementById('preview-detected-format').textContent = preview.detectedFormat || 'Ham Veri';
+
+        const previewDlp = (preview.dlpAlerts && preview.dlpAlerts.length > 0) ? preview.dlpAlerts : dlpAlerts;
+        if (previewDlp.length > 0) {
+          dlpBox.style.display = 'flex';
+          dlpListEl.innerHTML = previewDlp.map(a => `<span class="dlp-alert-item">${esc(a)}</span>`).join('');
+        }
 
         const lines = (preview.extractedStrings && preview.extractedStrings.length > 0)
           ? preview.extractedStrings.join('\n')
@@ -1126,6 +1195,14 @@
     renderJobs();
   });
 
+  if (filterDlpEl) {
+    filterDlpEl.addEventListener('change', () => {
+      selectedDlp = filterDlpEl.value;
+      currentPage = 1;
+      renderJobs();
+    });
+  }
+
   btnResetFilters.addEventListener('click', () => {
     filterEl.value = '';
     jobFilterText = '';
@@ -1135,6 +1212,8 @@
     selectedMachine = '';
     filterDatatypeEl.value = '';
     selectedDatatype = '';
+    if (filterDlpEl) filterDlpEl.value = 'all';
+    selectedDlp = 'all';
     filterTimeEl.value = 'all';
     selectedTime = 'all';
     currentPage = 1;
@@ -1164,6 +1243,85 @@
     setTimeout(() => iconRefresh.classList.remove('spin'), 500);
   });
 
+  // Auth & Login Handlers
+  async function checkAuth() {
+    try {
+      const res = await apiFetch('/api/auth/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authRequired && !data.authenticated) {
+          showLoginModal();
+          return false;
+        } else {
+          hideLoginModal();
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Kimlik doğrulama kontrolü başarısız', e);
+    }
+    return true;
+  }
+
+  if (formLogin) {
+    formLogin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginError.style.display = 'none';
+      const password = inputLoginPassword.value;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            if (data.token) {
+              authToken = data.token;
+              sessionStorage.setItem('ogm_dash_token', authToken);
+            }
+            inputLoginPassword.value = '';
+            hideLoginModal();
+            showToast('Giriş Başarılı', 'Yönetim paneline giriş yapıldı.', 'info');
+            await loadInitialState();
+            connectStream();
+            await loadServerInfo();
+          } else {
+            loginError.textContent = data.message || 'Geçersiz şifre!';
+            loginError.style.display = 'block';
+          }
+        } else {
+          loginError.textContent = 'Giriş yapılamadı (Hatalı şifre)';
+          loginError.style.display = 'block';
+        }
+      } catch (err) {
+        loginError.textContent = 'Bağlantı hatası!';
+        loginError.style.display = 'block';
+      }
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      try {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+      } catch (e) {}
+      authToken = '';
+      sessionStorage.removeItem('ogm_dash_token');
+      showToast('Çıkış Yapıldı', 'Oturum kapatıldı.', 'info');
+      const isAuthed = await checkAuth();
+      if (!isAuthed) {
+        state = { agents: [], jobs: [], onlineThresholdSeconds: 90 };
+        render();
+        if (activeEventSource) {
+          activeEventSource.close();
+          activeEventSource = null;
+        }
+      }
+    });
+  }
+
   // Live Clock updater (Turkish format with Day of Week)
   function updateClock() {
     const now = new Date();
@@ -1186,6 +1344,10 @@
   // Initialize UI & stream
   applyTheme(currentTheme);
   updateSoundUI();
-  loadInitialState().then(connectStream);
+  checkAuth().then(isAuthed => {
+    if (isAuthed) {
+      loadInitialState().then(connectStream);
+    }
+  });
   loadServerInfo();
 })();
